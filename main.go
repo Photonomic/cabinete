@@ -36,21 +36,38 @@ func runOrganizer(cmd *cobra.Command, args []string) {
 		SetBorders(true).
 		SetFixed(1, 1)
 
-	table.SetCell(0, 0, tview.NewTableCell("File Name").
+	table.SetCell(0, 0, tview.NewTableCell("Directory (Day)").
 		SetTextColor(tcell.ColorYellow).
 		SetAlign(tview.AlignCenter))
-	table.SetCell(0, 1, tview.NewTableCell("Day Directory").
-		SetTextColor(tcell.ColorYellow).
-		SetAlign(tview.AlignCenter))
-	table.SetCell(0, 2, tview.NewTableCell("Status").
+	table.SetCell(0, 1, tview.NewTableCell("File Count").
 		SetTextColor(tcell.ColorYellow).
 		SetAlign(tview.AlignCenter))
 
-	var wg sync.WaitGroup
-	rowIndex := 1
+	statusText := tview.NewTextView().SetTextAlign(tview.AlignCenter)
+
+	// Track processed and pending files
+	var processedFiles int
+	totalFiles := 0
+	dirFileCounts := make(map[string]int)
+	var mutex sync.Mutex
+
+	// Pre-count total files for pending counter
+	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			totalFiles++
+		}
+		return nil
+	})
+
+	// Update statusText function
+	updateStatus := func() {
+		statusText.SetText(fmt.Sprintf("Processed: %d / %d", processedFiles, totalFiles))
+	}
+
+	// Run file organization in a goroutine
 	done := make(chan struct{})
+	var wg sync.WaitGroup
 
-	// Start a goroutine for processing files
 	go func() {
 		defer close(done)
 		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
@@ -61,37 +78,41 @@ func runOrganizer(cmd *cobra.Command, args []string) {
 				return nil
 			}
 
-			// Getting file creation time (using modification time as proxy if unsupported)
+			// Get file creation day (using modification time as a proxy)
 			creationTime := info.ModTime()
 			dayDir := fmt.Sprintf("%02d", creationTime.Day())
-
-			// Target directory based on day
 			targetDir := filepath.Join(dir, dayDir)
+
+			// Create directory if it doesn't exist
 			if err := os.MkdirAll(targetDir, os.ModePerm); err != nil {
 				return err
 			}
 
-			// Move file to the day directory
+			// Move file
 			targetPath := filepath.Join(targetDir, info.Name())
-			moveStatus := "Moved"
 			if err := os.Rename(path, targetPath); err != nil {
-				moveStatus = "Failed"
+				return err
 			}
 
-			// Schedule a table update
+			// Update counters
+			mutex.Lock()
+			dirFileCounts[dayDir]++
+			processedFiles++
+			mutex.Unlock()
+
+			// Queue a UI update
 			wg.Add(1)
 			app.QueueUpdateDraw(func() {
 				defer wg.Done()
-				table.SetCell(rowIndex, 0, tview.NewTableCell(info.Name()).
-					SetTextColor(tcell.ColorWhite).
-					SetAlign(tview.AlignLeft))
-				table.SetCell(rowIndex, 1, tview.NewTableCell(dayDir).
+
+				// Update directory row with file count
+				row := findOrCreateRow(table, dayDir)
+				table.SetCell(row, 1, tview.NewTableCell(fmt.Sprintf("%d", dirFileCounts[dayDir])).
 					SetTextColor(tcell.ColorGreen).
 					SetAlign(tview.AlignCenter))
-				table.SetCell(rowIndex, 2, tview.NewTableCell(moveStatus).
-					SetTextColor(tcell.ColorLightGray).
-					SetAlign(tview.AlignCenter))
-				rowIndex++
+
+				// Update processed/pending status
+				updateStatus()
 			})
 
 			return nil
@@ -110,10 +131,34 @@ func runOrganizer(cmd *cobra.Command, args []string) {
 	}()
 
 	// Run the application
-	if err := app.SetRoot(table, true).EnableMouse(true).Run(); err != nil {
+	flex := tview.NewFlex().SetDirection(tview.FlexRow).
+		AddItem(table, 0, 1, false).
+		AddItem(statusText, 1, 0, false)
+
+	if err := app.SetRoot(flex, true).EnableMouse(true).Run(); err != nil {
 		log.Fatalf("Error starting the application: %v", err)
 	}
 
 	fmt.Println("Files have been organized by creation day!")
+}
+
+// Helper to find or create a row in the table for a given directory
+func findOrCreateRow(table *tview.Table, dayDir string) int {
+	for row := 1; row < table.GetRowCount(); row++ {
+		cell := table.GetCell(row, 0)
+		if cell.Text == dayDir {
+			return row
+		}
+	}
+
+	// If not found, create a new row
+	row := table.GetRowCount()
+	table.SetCell(row, 0, tview.NewTableCell(dayDir).
+		SetTextColor(tcell.ColorWhite).
+		SetAlign(tview.AlignLeft))
+	table.SetCell(row, 1, tview.NewTableCell("0").
+		SetTextColor(tcell.ColorGreen).
+		SetAlign(tview.AlignCenter))
+	return row
 }
 
