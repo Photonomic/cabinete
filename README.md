@@ -1,6 +1,3 @@
-Here’s a `README.md` file for your project, **Cabinete**:
-
-```markdown
 # Cabinete
 
 Cabinete is a command-line tool for organizing photos (or other files) by creation date. It scans a specified directory, identifies the creation date of each file, and moves files into subdirectories named by the day of the month they were created (e.g., `01`, `02`, ... `31`). The tool provides a live interface that displays the directories being created, the number of files in each, and a progress counter of files processed versus remaining files.
@@ -104,14 +101,3 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 ---
 
 Enjoy organizing your files with **Cabinete**! 🎉
-```
-
-### Explanation
-
-This `README.md` includes:
-- **Project Description**: Overview and core functionality.
-- **Installation**: How to build and install the tool.
-- **Usage Instructions**: Basic command options and an example.
-- **Development Guide**: Project structure and makefile commands.
-- **Contribution Guidelines**: Information on contributing to the project.
-- **License**: Standard license information.
